@@ -10,6 +10,8 @@ document.getElementById('generateLettersBtn').addEventListener('click', generate
 let reportText = '';
 let issues = [];
 let inquiriesToChallenge = [];
+let accounts = []; // Will hold account info including late payments, charge-offs
+let personalInfoIssues = []; // Multiple names, addresses, or unverified accounts
 
 // ============================
 // Analyze Report
@@ -72,9 +74,13 @@ function extractPdfText(arrayBuffer) {
 function processReportText() {
     issues = [];
     inquiriesToChallenge = [];
+    accounts = [];
+    personalInfoIssues = [];
 
     detectInaccuracies();
     extractInquiries();
+    extractAccounts();
+    detectPersonalInfoIssues();
     displayResults();
 }
 
@@ -111,6 +117,58 @@ function extractInquiries() {
             inquiriesToChallenge.push(match[1]);
         }
     }
+}
+
+// ============================
+// Extract Accounts, Late Payments & Charge-Offs
+// ============================
+function extractAccounts() {
+    const accountRegex = /Account Name[: ]*(.*?)\n.*?(Status[: ]*(.*?))\n.*?(30|60|90|120)\s*Days Late.*?\n.*?(Charge[- ]Off[: ]*(Paid|Unpaid)?)/gi;
+    let match;
+    while ((match = accountRegex.exec(reportText)) !== null) {
+        const name = match[1].trim();
+        const status = match[3] ? match[3].trim() : '';
+        const late = match[4] ? [match[4] + " Days Late"] : [];
+        const chargeOff = match[6] ? true : false;
+
+        accounts.push({
+            name: name,
+            status: status,
+            latePayments: late,
+            chargeOff: chargeOff
+        });
+    }
+}
+
+// ============================
+// Detect Multiple Names / Addresses / Unverified Accounts
+// ============================
+function detectPersonalInfoIssues() {
+    const nameRegex = /Name[: ]*(.*?)\n/g;
+    const addressRegex = /Address[: ]*(.*?)\n/g;
+    let names = new Set(), addresses = new Set();
+    let match;
+
+    while ((match = nameRegex.exec(reportText)) !== null) {
+        names.add(match[1].trim());
+    }
+    while ((match = addressRegex.exec(reportText)) !== null) {
+        addresses.add(match[1].trim());
+    }
+
+    if (names.size > 1) {
+        personalInfoIssues.push({ type: 'Multiple Names', data: Array.from(names) });
+    }
+    if (addresses.size > 1) {
+        personalInfoIssues.push({ type: 'Multiple Addresses', data: Array.from(addresses) });
+    }
+
+    // Detect unverified accounts
+    accounts.forEach(acc => {
+        if (!acc.status || acc.status.toLowerCase() === "unverified") {
+            personalInfoIssues.push({ type: 'Account Without Verification', account: acc.name });
+        }
+    });
 }
 
 // ============================
@@ -165,14 +223,11 @@ function generateLetters() {
     const lettersDiv = document.getElementById('lettersSection');
     lettersDiv.innerHTML = '';
 
-    if (inquiriesToChallenge.length === 0) {
-        lettersDiv.innerHTML = "<p style='color:red; font-weight:bold;'>No inquiries older than 4 months found. No letters generated.</p>";
-        lettersDiv.style.display = 'block';
-        lettersDiv.scrollIntoView({ behavior: "smooth" });
-        return;
-    }
+    let actionableItems = false;
 
+    // Inquiries older than 4 months
     inquiriesToChallenge.forEach(date => {
+        actionableItems = true;
         const div = document.createElement('div');
         div.style.background = "#e9ecef";
         div.style.padding = "15px";
@@ -180,9 +235,6 @@ function generateLetters() {
         div.style.border = "2px solid #007bff";
         div.style.borderRadius = "8px";
         div.style.whiteSpace = "pre-wrap";
-        div.style.fontFamily = "monospace";
-        div.style.fontSize = "14px";
-
         div.textContent = `📄 Dispute Letter for inquiry on ${date}:
 
 To Whom It May Concern,
@@ -193,10 +245,104 @@ Please investigate this matter and remove the unauthorized inquiry immediately.
 
 Sincerely,
 [Your Name]`;
+        lettersDiv.appendChild(div);
+    });
+
+    // Accounts without verification / multiple names / addresses
+    personalInfoIssues.forEach(issue => {
+        actionableItems = true;
+        const div = document.createElement('div');
+        div.style.background = "#fce4e4";
+        div.style.padding = "15px";
+        div.style.margin = "10px 0";
+        div.style.border = "2px solid #ff0000";
+        div.style.borderRadius = "8px";
+        div.style.whiteSpace = "pre-wrap";
+
+        if(issue.type === 'Account Without Verification') {
+            div.textContent = `📄 Verification Request for account "${issue.account}":
+
+To Whom It May Concern,
+
+I am writing regarding the account "${issue.account}". I do not recall authorizing this account. Under the FCRA, you are required to provide documentation proving my authorization to open this account.
+
+Please provide verification immediately or remove this account from my credit file.
+
+Sincerely,
+[Your Name]`;
+        } else if(issue.type === 'Multiple Names') {
+            div.textContent = `📄 Multiple Names Detected:
+
+To Whom It May Concern,
+
+Multiple names were detected on my credit report: ${issue.data.join(', ')}. Please verify and ensure all names are accurate and authorized.
+
+Sincerely,
+[Your Name]`;
+        } else if(issue.type === 'Multiple Addresses') {
+            div.textContent = `📄 Multiple Addresses Detected:
+
+To Whom It May Concern,
+
+Multiple addresses were detected on my credit report: ${issue.data.join(', ')}. Please verify and ensure all addresses are accurate.
+
+Sincerely,
+[Your Name]`;
+        }
 
         lettersDiv.appendChild(div);
     });
 
+    // Late Payments & Charge-Offs
+    accounts.forEach(acc => {
+        if (acc.latePayments.length > 0) {
+            actionableItems = true;
+            const div = document.createElement('div');
+            div.style.background = "#fff8e1";
+            div.style.padding = "15px";
+            div.style.margin = "10px 0";
+            div.style.border = "2px solid #ffb300";
+            div.style.borderRadius = "8px";
+            div.style.whiteSpace = "pre-wrap";
+            div.textContent = `📄 Dispute Letter for late payments on account "${acc.name}":
+
+To Whom It May Concern,
+
+I am writing to dispute the following reported late payments on my account "${acc.name}": ${acc.latePayments.join(', ')}. Please provide documentation to verify the accuracy of these reported delinquencies. Under the FCRA, I have the right to dispute inaccurate or unverified information.
+
+If you cannot provide verification, please correct or remove these late payments from my credit file immediately.
+
+Sincerely,
+[Your Name]`;
+            lettersDiv.appendChild(div);
+        }
+
+        if (acc.chargeOff) {
+            actionableItems = true;
+            const div = document.createElement('div');
+            div.style.background = "#ffecec";
+            div.style.padding = "15px";
+            div.style.margin = "10px 0";
+            div.style.border = "2px solid #ff0000";
+            div.style.borderRadius = "8px";
+            div.style.whiteSpace = "pre-wrap";
+            div.textContent = `📄 Dispute Letter for charge-off on account "${acc.name}":
+
+To Whom It May Concern,
+
+I am disputing the reported charge-off for the account "${acc.name}". Please provide all documentation proving the validity and balance of this debt. If you cannot verify, this information must be corrected or removed from my credit report as required by the Fair Credit Reporting Act (FCRA).
+
+Sincerely,
+[Your Name]`;
+            lettersDiv.appendChild(div);
+        }
+    });
+
+    if (!actionableItems) {
+        lettersDiv.innerHTML = "<p style='color:red; font-weight:bold;'>No actionable items found. No letters generated.</p>";
+    }
+
     lettersDiv.style.display = 'block';
     lettersDiv.scrollIntoView({ behavior: "smooth" });
 }
+
