@@ -10,8 +10,8 @@ document.getElementById('generateLettersBtn').addEventListener('click', generate
 let reportText = '';
 let issues = [];
 let inquiriesToChallenge = [];
-let accounts = []; // Will hold account info including late payments, charge-offs
-let personalInfoIssues = []; // Multiple names, addresses, or unverified accounts
+let accounts = [];
+let personalInfoIssues = [];
 
 // ============================
 // Analyze Report
@@ -69,7 +69,7 @@ function extractPdfText(arrayBuffer) {
 }
 
 // ============================
-// Process Report Text
+// Process Full Report Text
 // ============================
 function processReportText() {
     issues = [];
@@ -85,7 +85,7 @@ function processReportText() {
 }
 
 // ============================
-// Detect Inaccuracies
+// Detect General Errors
 // ============================
 function detectInaccuracies() {
     if (reportText.includes("000-00-0000")) {
@@ -120,33 +120,38 @@ function extractInquiries() {
 }
 
 // ============================
-// Extract Accounts, Late Payments & Charge-Offs
+// Extract Accounts (Late, Charge-off, Unverified)
 // ============================
 function extractAccounts() {
-    const accountRegex = /Account Name[: ]*(.*?)\n.*?(Status[: ]*(.*?))\n.*?(30|60|90|120)\s*Days Late.*?\n.*?(Charge[- ]Off[: ]*(Paid|Unpaid)?)/gi;
+    const accountRegex = /Account Name[: ]*(.*?)\n([\s\S]*?)(?=Account Name|$)/gi;
     let match;
+
     while ((match = accountRegex.exec(reportText)) !== null) {
+        const block = match[2];
         const name = match[1].trim();
-        const status = match[3] ? match[3].trim() : '';
-        const late = match[4] ? [match[4] + " Days Late"] : [];
-        const chargeOff = match[6] ? true : false;
+
+        const lateMatch = block.match(/(\d{2,3}) Days Late/gi) || [];
+        const chargeOffMatch = block.match(/Charge[- ]?Off/gi);
+        const statusMatch = block.match(/Status[: ]*(.*)/i);
 
         accounts.push({
             name: name,
-            status: status,
-            latePayments: late,
-            chargeOff: chargeOff
+            status: statusMatch ? statusMatch[1].trim() : "",
+            latePayments: lateMatch.map(x => x.trim()),
+            chargeOff: chargeOffMatch ? true : false
         });
     }
 }
 
 // ============================
-// Detect Multiple Names / Addresses / Unverified Accounts
+// Detect Multiple Names & Addresses & Unverified Accounts
 // ============================
 function detectPersonalInfoIssues() {
     const nameRegex = /Name[: ]*(.*?)\n/g;
     const addressRegex = /Address[: ]*(.*?)\n/g;
-    let names = new Set(), addresses = new Set();
+
+    let names = new Set();
+    let addresses = new Set();
     let match;
 
     while ((match = nameRegex.exec(reportText)) !== null) {
@@ -157,63 +162,43 @@ function detectPersonalInfoIssues() {
     }
 
     if (names.size > 1) {
-        personalInfoIssues.push({ type: 'Multiple Names', data: Array.from(names) });
+        personalInfoIssues.push({ type: "Multiple Names", data: Array.from(names) });
     }
     if (addresses.size > 1) {
-        personalInfoIssues.push({ type: 'Multiple Addresses', data: Array.from(addresses) });
+        personalInfoIssues.push({ type: "Multiple Addresses", data: Array.from(addresses) });
     }
 
-    // Detect unverified accounts
     accounts.forEach(acc => {
-        if (!acc.status || acc.status.toLowerCase() === "unverified") {
-            personalInfoIssues.push({ type: 'Account Without Verification', account: acc.name });
+        if (!acc.status || acc.status.toLowerCase().includes("unverified")) {
+            personalInfoIssues.push({
+                type: "Account Without Verification",
+                account: acc.name
+            });
         }
     });
 }
 
 // ============================
-// Display Results in UI
+// Display Results
 // ============================
 function displayResults() {
-    const reportSection = document.getElementById('reportSection');
-    reportSection.style.display = 'block';
-    reportSection.scrollIntoView({ behavior: "smooth" });
+    document.getElementById('reportSection').style.display = 'block';
 
-    // Detected Issues
     const issuesList = document.getElementById('issuesList');
-    issuesList.innerHTML = '';
-    if (issues.length === 0) {
+    issuesList.innerHTML = "";
+    issues.forEach(i => {
         const li = document.createElement('li');
-        li.textContent = "No issues detected in this report.";
-        li.style.color = "green";
-        li.style.fontWeight = "bold";
+        li.textContent = i;
         issuesList.appendChild(li);
-    } else {
-        issues.forEach(i => {
-            const li = document.createElement('li');
-            li.textContent = i;
-            li.style.fontFamily = "monospace";
-            li.style.marginBottom = "5px";
-            issuesList.appendChild(li);
-        });
-    }
+    });
 
-    // Inquiries to Challenge
     const inquiriesList = document.getElementById('inquiriesList');
-    inquiriesList.innerHTML = '';
-    if (inquiriesToChallenge.length === 0) {
+    inquiriesList.innerHTML = "";
+    inquiriesToChallenge.forEach(i => {
         const li = document.createElement('li');
-        li.textContent = "No inquiries older than 4 months to challenge.";
-        li.style.color = "gray";
+        li.textContent = i;
         inquiriesList.appendChild(li);
-    } else {
-        inquiriesToChallenge.forEach(i => {
-            const li = document.createElement('li');
-            li.textContent = i;
-            li.style.fontFamily = "monospace";
-            inquiriesList.appendChild(li);
-        });
-    }
+    });
 }
 
 // ============================
@@ -225,124 +210,162 @@ function generateLetters() {
 
     let actionableItems = false;
 
-    // Inquiries older than 4 months
+    // ---- HARD INQUIRIES ----
     inquiriesToChallenge.forEach(date => {
         actionableItems = true;
-        const div = document.createElement('div');
-        div.style.background = "#e9ecef";
-        div.style.padding = "15px";
-        div.style.margin = "10px 0";
-        div.style.border = "2px solid #007bff";
-        div.style.borderRadius = "8px";
-        div.style.whiteSpace = "pre-wrap";
-        div.textContent = `📄 Dispute Letter for inquiry on ${date}:
+
+        const div = createLetterBox(`
+📄 **Dispute Letter – Unauthorized Inquiry (${date})**
 
 To Whom It May Concern,
 
-I am writing to dispute a hard inquiry reported on ${date}. Under the Fair Credit Reporting Act (FCRA), I must give written permission for any hard inquiry on my credit file. I do not recognize or authorize this inquiry.
+I am disputing the hard inquiry reported on ${date}. I did not authorize or give written consent for this inquiry.  
+Under the FCRA, you must furnish **a hard-copy record of my signature and identification** used to obtain my credit file.
 
-Please investigate this matter and remove the unauthorized inquiry immediately.
+If you cannot provide this documentation, remove this inquiry immediately.
 
-Sincerely,
-[Your Name]`;
+Sincerely,  
+[Your Name]
+        `);
+
         lettersDiv.appendChild(div);
     });
 
-    // Accounts without verification / multiple names / addresses
+    // ---- PERSONAL INFO ISSUES ----
     personalInfoIssues.forEach(issue => {
         actionableItems = true;
-        const div = document.createElement('div');
-        div.style.background = "#fce4e4";
-        div.style.padding = "15px";
-        div.style.margin = "10px 0";
-        div.style.border = "2px solid #ff0000";
-        div.style.borderRadius = "8px";
-        div.style.whiteSpace = "pre-wrap";
 
-        if(issue.type === 'Account Without Verification') {
-            div.textContent = `📄 Verification Request for account "${issue.account}":
+        let content = "";
+
+        if (issue.type === "Multiple Names") {
+            content = `
+📄 **Dispute Letter – Multiple Names Reported**
 
 To Whom It May Concern,
 
-I am writing regarding the account "${issue.account}". I do not recall authorizing this account. Under the FCRA, you are required to provide documentation proving my authorization to open this account.
+The following names are appearing on my credit report:  
+${issue.data.join(", ")}  
 
-Please provide verification immediately or remove this account from my credit file.
+I request verification of each name, including **any application, signature, or ID** connected to them.  
+Remove any names that cannot be verified with supporting documents.
 
-Sincerely,
-[Your Name]`;
-        } else if(issue.type === 'Multiple Names') {
-            div.textContent = `📄 Multiple Names Detected:
-
-To Whom It May Concern,
-
-Multiple names were detected on my credit report: ${issue.data.join(', ')}. Please verify and ensure all names are accurate and authorized.
-
-Sincerely,
-[Your Name]`;
-        } else if(issue.type === 'Multiple Addresses') {
-            div.textContent = `📄 Multiple Addresses Detected:
-
-To Whom It May Concern,
-
-Multiple addresses were detected on my credit report: ${issue.data.join(', ')}. Please verify and ensure all addresses are accurate.
-
-Sincerely,
-[Your Name]`;
+Sincerely,  
+[Your Name]
+            `;
         }
 
-        lettersDiv.appendChild(div);
+        if (issue.type === "Multiple Addresses") {
+            content = `
+📄 **Dispute Letter – Multiple Addresses Reported**
+
+To Whom It May Concern,
+
+Multiple addresses were found on my credit file:  
+${issue.data.join(", ")}  
+
+Please provide documentation linking me to these addresses or remove any unverifiable addresses immediately.
+
+Sincerely,  
+[Your Name]
+            `;
+        }
+
+        if (issue.type === "Account Without Verification") {
+            content = `
+📄 **Verification Request – Unverified Account ("${issue.account}")**
+
+To Whom It May Concern,
+
+I am requesting verification for the account "${issue.account}".  
+Under the FCRA, you are required to maintain proof of authorization.
+
+Provide:
+• A hard-copy of the original application  
+• My handwritten signature  
+• Identification used at the time of opening  
+• Any documents proving contractual relationship  
+
+If you cannot produce these documents, remove this account from my credit file immediately.
+
+Sincerely,  
+[Your Name]
+            `;
+        }
+
+        lettersDiv.appendChild(createLetterBox(content));
     });
 
-    // Late Payments & Charge-Offs
+    // ---- LATE PAYMENTS & CHARGE-OFFS ----
     accounts.forEach(acc => {
+        // Late Payments
         if (acc.latePayments.length > 0) {
             actionableItems = true;
-            const div = document.createElement('div');
-            div.style.background = "#fff8e1";
-            div.style.padding = "15px";
-            div.style.margin = "10px 0";
-            div.style.border = "2px solid #ffb300";
-            div.style.borderRadius = "8px";
-            div.style.whiteSpace = "pre-wrap";
-            div.textContent = `📄 Dispute Letter for late payments on account "${acc.name}":
+
+            lettersDiv.appendChild(createLetterBox(`
+📄 **Dispute Letter – Late Payments ("${acc.name}")**
 
 To Whom It May Concern,
 
-I am writing to dispute the following reported late payments on my account "${acc.name}": ${acc.latePayments.join(', ')}. Please provide documentation to verify the accuracy of these reported delinquencies. Under the FCRA, I have the right to dispute inaccurate or unverified information.
+I dispute the following late payments reported for "${acc.name}":  
+${acc.latePayments.join(", ")}
 
-If you cannot provide verification, please correct or remove these late payments from my credit file immediately.
+Provide full verification, including:
+• A hard-copy of the original signed agreement  
+• Payment history records  
+• Identification used to open the account  
+• Proof that I was actually late  
 
-Sincerely,
-[Your Name]`;
-            lettersDiv.appendChild(div);
+If you cannot verify this information, remove these late payments immediately.
+
+Sincerely,  
+[Your Name]
+            `));
         }
 
+        // Charge-Offs
         if (acc.chargeOff) {
             actionableItems = true;
-            const div = document.createElement('div');
-            div.style.background = "#ffecec";
-            div.style.padding = "15px";
-            div.style.margin = "10px 0";
-            div.style.border = "2px solid #ff0000";
-            div.style.borderRadius = "8px";
-            div.style.whiteSpace = "pre-wrap";
-            div.textContent = `📄 Dispute Letter for charge-off on account "${acc.name}":
+
+            lettersDiv.appendChild(createLetterBox(`
+📄 **Dispute Letter – Charge-Off ("${acc.name}")**
 
 To Whom It May Concern,
 
-I am disputing the reported charge-off for the account "${acc.name}". Please provide all documentation proving the validity and balance of this debt. If you cannot verify, this information must be corrected or removed from my credit report as required by the Fair Credit Reporting Act (FCRA).
+I dispute the reported charge-off for the account "${acc.name}".  
+Provide full validation including:
 
-Sincerely,
-[Your Name]`;
-            lettersDiv.appendChild(div);
+• Hard-copy of my signed contract  
+• Identification used to open the account  
+• Proof of ownership of the debt  
+• Complete accounting and itemization  
+• Charge-off calculation records  
+
+If you cannot verify this charge-off with legally required documents, remove it immediately.
+
+Sincerely,  
+[Your Name]
+            `));
         }
     });
 
     if (!actionableItems) {
-        lettersDiv.innerHTML = "<p style='color:red; font-weight:bold;'>No actionable items found. No letters generated.</p>";
+        lettersDiv.innerHTML =
+            "<p style='color:red; font-weight:bold;'>No actionable items found. No letters generated.</p>";
     }
-
-    lettersDiv.style.display = 'block';
-    lettersDiv.scrollIntoView({ behavior: "smooth" });
 }
 
+// ============================
+// Helper – Letter Box Styling
+// ============================
+function createLetterBox(text) {
+    const div = document.createElement('div');
+    div.style.background = "#f8f9fa";
+    div.style.padding = "15px";
+    div.style.margin = "10px 0";
+    div.style.border = "2px solid #007bff";
+    div.style.borderRadius = "8px";
+    div.style.whiteSpace = "pre-wrap";
+    div.style.fontFamily = "monospace";
+    div.textContent = text.trim();
+    return div;
+}
