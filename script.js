@@ -1,3 +1,9 @@
+// ============================
+// PDF.js Worker Setup
+// ============================
+pdfjsLib.GlobalWorkerOptions.workerSrc =
+  "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
+
 document.getElementById('analyzeBtn').addEventListener('click', analyzeReport);
 document.getElementById('generateLettersBtn').addEventListener('click', generateLetters);
 
@@ -16,25 +22,67 @@ function analyzeReport() {
     const reader = new FileReader();
 
     reader.onload = function(e) {
-        reportText = e.target.result;
-        issues = [];
-        inquiriesToChallenge = [];
-
-        detectInaccuracies();
-        extractInquiries();
-
-        displayResults();
+        if (file.name.endsWith('.txt')) {
+            // TXT FILE → Just read the contents
+            reportText = e.target.result;
+            processReportText();
+        } 
+        else if (file.name.endsWith('.pdf')) {
+            // PDF FILE → Extract text using PDF.js
+            extractPdfText(e.target.result);
+        } 
+        else {
+            alert("Unsupported file type. Please upload a PDF or TXT file.");
+        }
     };
 
+    // Read file based on type
     if (file.name.endsWith('.txt')) {
         reader.readAsText(file);
     } else if (file.name.endsWith('.pdf')) {
-        alert("PDF parsing not supported in this demo. Use TXT format for now.");
-    } else {
-        alert("Unsupported file type. Use PDF or TXT.");
+        reader.readAsArrayBuffer(file); // Required for PDF
     }
 }
 
+// ============================
+// PDF → Text Extraction
+// ============================
+function extractPdfText(arrayBuffer) {
+    const loadingTask = pdfjsLib.getDocument({ data: arrayBuffer });
+
+    loadingTask.promise.then(async function(pdf) {
+        let fullText = "";
+
+        for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+            const page = await pdf.getPage(pageNum);
+            const textContent = await page.getTextContent();
+            const pageText = textContent.items.map(item => item.str).join(" ");
+            fullText += pageText + "\n\n";
+        }
+
+        reportText = fullText;
+        processReportText();
+    }).catch(err => {
+        console.error("PDF parsing error:", err);
+        alert("Unable to read the PDF. Try converting it to TXT.");
+    });
+}
+
+// ============================
+// Run Detection + Display Results
+// ============================
+function processReportText() {
+    issues = [];
+    inquiriesToChallenge = [];
+
+    detectInaccuracies();
+    extractInquiries();
+    displayResults();
+}
+
+// ============================
+// Inaccuracy Detection
+// ============================
 function detectInaccuracies() {
     if (reportText.includes("000-00-0000")) {
         issues.push("Invalid SSN detected.");
@@ -49,6 +97,9 @@ function detectInaccuracies() {
     }
 }
 
+// ============================
+// Inquiry Extraction
+// ============================
 function extractInquiries() {
     const inquiryRegex = /Inquiry.*?Date[: ]*(\d{1,2}\/\d{1,2}\/\d{2,4})/g;
     let match;
@@ -64,6 +115,9 @@ function extractInquiries() {
     }
 }
 
+// ============================
+// Display Results in UI
+// ============================
 function displayResults() {
     document.getElementById('reportSection').style.display = 'block';
 
@@ -84,6 +138,9 @@ function displayResults() {
     });
 }
 
+// ============================
+// Generate Dispute Letters
+// ============================
 function generateLetters() {
     const lettersDiv = document.getElementById('lettersSection');
     lettersDiv.innerHTML = '';
