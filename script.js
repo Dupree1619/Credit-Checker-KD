@@ -215,7 +215,28 @@ function generateLetters() {
     // ---- HARD INQUIRIES ----
     inquiriesToChallenge.forEach(date => {
         actionableItems = true;
+document.getElementById('downloadLettersBtn').addEventListener('click', function() {
+    const lettersDiv = document.getElementById('lettersSection');
+    if (!lettersDiv || lettersDiv.innerText.trim() === "") {
+        alert("No letters to download.");
+        return;
+    }
 
+    // Combine all letters text
+    const allText = lettersDiv.innerText;
+
+    // Create a temporary file and trigger download
+    const blob = new Blob([allText], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'DisputeLetters.txt';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+});
         const div = createLetterBox(`
 📄 **Dispute Letter – Unauthorized Inquiry (${date})**
 
