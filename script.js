@@ -3,7 +3,9 @@
 // ============================
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
-
+document.getElementById('downloadAllBtn').addEventListener('click', () => {
+    console.log('Download button clicked — PDF logic not implemented yet');
+});
 document.getElementById('analyzeBtn').addEventListener('click', analyzeReport);
 document.getElementById('generateLettersBtn').addEventListener('click', generateLetters);
 
