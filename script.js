@@ -11,6 +11,9 @@ let reportText = '';
 let issues = [];
 let inquiriesToChallenge = [];
 
+// ============================
+// Analyze Report
+// ============================
 function analyzeReport() {
     const fileInput = document.getElementById('fileInput');
     if (!fileInput.files[0]) {
@@ -23,24 +26,19 @@ function analyzeReport() {
 
     reader.onload = function(e) {
         if (file.name.endsWith('.txt')) {
-            // TXT FILE → Just read the contents
             reportText = e.target.result;
             processReportText();
-        } 
-        else if (file.name.endsWith('.pdf')) {
-            // PDF FILE → Extract text using PDF.js
+        } else if (file.name.endsWith('.pdf')) {
             extractPdfText(e.target.result);
-        } 
-        else {
+        } else {
             alert("Unsupported file type. Please upload a PDF or TXT file.");
         }
     };
 
-    // Read file based on type
     if (file.name.endsWith('.txt')) {
         reader.readAsText(file);
     } else if (file.name.endsWith('.pdf')) {
-        reader.readAsArrayBuffer(file); // Required for PDF
+        reader.readAsArrayBuffer(file);
     }
 }
 
@@ -69,7 +67,7 @@ function extractPdfText(arrayBuffer) {
 }
 
 // ============================
-// Run Detection + Display Results
+// Process Report Text
 // ============================
 function processReportText() {
     issues = [];
@@ -81,7 +79,7 @@ function processReportText() {
 }
 
 // ============================
-// Inaccuracy Detection
+// Detect Inaccuracies
 // ============================
 function detectInaccuracies() {
     if (reportText.includes("000-00-0000")) {
@@ -98,7 +96,7 @@ function detectInaccuracies() {
 }
 
 // ============================
-// Inquiry Extraction
+// Extract Inquiries
 // ============================
 function extractInquiries() {
     const inquiryRegex = /Inquiry.*?Date[: ]*(\d{1,2}\/\d{1,2}\/\d{2,4})/g;
@@ -119,23 +117,45 @@ function extractInquiries() {
 // Display Results in UI
 // ============================
 function displayResults() {
-    document.getElementById('reportSection').style.display = 'block';
+    const reportSection = document.getElementById('reportSection');
+    reportSection.style.display = 'block';
+    reportSection.scrollIntoView({ behavior: "smooth" });
 
+    // Detected Issues
     const issuesList = document.getElementById('issuesList');
     issuesList.innerHTML = '';
-    issues.forEach(i => {
+    if (issues.length === 0) {
         const li = document.createElement('li');
-        li.textContent = i;
+        li.textContent = "No issues detected in this report.";
+        li.style.color = "green";
+        li.style.fontWeight = "bold";
         issuesList.appendChild(li);
-    });
+    } else {
+        issues.forEach(i => {
+            const li = document.createElement('li');
+            li.textContent = i;
+            li.style.fontFamily = "monospace";
+            li.style.marginBottom = "5px";
+            issuesList.appendChild(li);
+        });
+    }
 
+    // Inquiries to Challenge
     const inquiriesList = document.getElementById('inquiriesList');
     inquiriesList.innerHTML = '';
-    inquiriesToChallenge.forEach(i => {
+    if (inquiriesToChallenge.length === 0) {
         const li = document.createElement('li');
-        li.textContent = i;
+        li.textContent = "No inquiries older than 4 months to challenge.";
+        li.style.color = "gray";
         inquiriesList.appendChild(li);
-    });
+    } else {
+        inquiriesToChallenge.forEach(i => {
+            const li = document.createElement('li');
+            li.textContent = i;
+            li.style.fontFamily = "monospace";
+            inquiriesList.appendChild(li);
+        });
+    }
 }
 
 // ============================
@@ -145,14 +165,25 @@ function generateLetters() {
     const lettersDiv = document.getElementById('lettersSection');
     lettersDiv.innerHTML = '';
 
+    if (inquiriesToChallenge.length === 0) {
+        lettersDiv.innerHTML = "<p style='color:red; font-weight:bold;'>No inquiries older than 4 months found. No letters generated.</p>";
+        lettersDiv.style.display = 'block';
+        lettersDiv.scrollIntoView({ behavior: "smooth" });
+        return;
+    }
+
     inquiriesToChallenge.forEach(date => {
         const div = document.createElement('div');
         div.style.background = "#e9ecef";
-        div.style.padding = "10px";
-        div.style.margin = "5px 0";
-        div.style.borderRadius = "5px";
+        div.style.padding = "15px";
+        div.style.margin = "10px 0";
+        div.style.border = "2px solid #007bff";
+        div.style.borderRadius = "8px";
+        div.style.whiteSpace = "pre-wrap";
+        div.style.fontFamily = "monospace";
+        div.style.fontSize = "14px";
 
-        div.textContent = `Dispute Letter for inquiry on ${date}:
+        div.textContent = `📄 Dispute Letter for inquiry on ${date}:
 
 To Whom It May Concern,
 
@@ -165,4 +196,7 @@ Sincerely,
 
         lettersDiv.appendChild(div);
     });
+
+    lettersDiv.style.display = 'block';
+    lettersDiv.scrollIntoView({ behavior: "smooth" });
 }
