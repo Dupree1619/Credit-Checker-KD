@@ -15,13 +15,17 @@ Allen, TX 75013`,
     TransUnion: `TransUnion LLC
 P.O. Box 2000
 Chester, PA 19016`
-}; ============================
+};
+
+//// ============================
 // PDF.js Worker Setup
 // ============================
 pdfjsLib.GlobalWorkerOptions.workerSrc =
   "https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.worker.min.js";
 
+//// ============================
 // DOM REFERENCES
+// ============================
 const fileInput = document.getElementById('fileInput');
 const downloadAllBtn = document.getElementById('downloadAllBtn');
 const analyzeBtn = document.getElementById('analyzeBtn');
@@ -33,26 +37,25 @@ const inquiriesList = document.getElementById('inquiriesList');
 const reportSection = document.getElementById('reportSection');
 const lettersSection = document.getElementById('lettersSection');
 
+//// ============================
 // GLOBAL STATE
+// ============================
 let reportText = "";
 let issues = [];
 let inquiriesToChallenge = [];
 let accounts = [];
 let personalInfoIssues = [];
+let generatedLetters = [];
 
-// ============================
+//// ============================
 // EVENT LISTENERS
 // ============================
 analyzeBtn.addEventListener('click', analyzeReport);
 generateLettersBtn.addEventListener('click', generateLetters);
 downloadLettersBtn.addEventListener('click', downloadAllLetters);
+downloadAllBtn.addEventListener('click', downloadAllPDFLetters);
 
-// (The PDF download button is not implemented yet but ready)
-downloadAllBtn.addEventListener('click', () => {
-    alert("PDF download feature will be added next!");
-});
-
-// ============================
+//// ============================
 // ANALYZE REPORT
 // ============================
 function analyzeReport() {
@@ -80,8 +83,8 @@ function analyzeReport() {
         : reader.readAsArrayBuffer(file);
 }
 
-// ============================
-// PDF → TEXT EXTRACTION (FIXED)
+//// ============================
+// PDF → TEXT EXTRACTION
 // ============================
 async function extractPdfText(arrayBuffer) {
     try {
@@ -102,7 +105,7 @@ async function extractPdfText(arrayBuffer) {
     }
 }
 
-// ============================
+//// ============================
 // MASTER PROCESSING FUNCTION
 // ============================
 function processReportText() {
@@ -118,22 +121,16 @@ function processReportText() {
     displayResults();
 }
 
-// ============================
+//// ============================
 // ISSUE DETECTION
 // ============================
 function detectInaccuracies() {
-    if (reportText.includes("000-00-0000")) {
-        issues.push("Invalid SSN detected.");
-    }
-    if (reportText.includes("??") || reportText.length < 150) {
-        issues.push("Unreadable or incomplete report detected.");
-    }
-    if (reportText.includes("30 Days Late") && reportText.includes("Status: Current")) {
-        issues.push("Conflicting status: 'Late' but also 'Current'.");
-    }
+    if (reportText.includes("000-00-0000")) issues.push("Invalid SSN detected.");
+    if (reportText.includes("??") || reportText.length < 150) issues.push("Unreadable or incomplete report detected.");
+    if (reportText.includes("30 Days Late") && reportText.includes("Status: Current")) issues.push("Conflicting status: 'Late' but also 'Current'.");
 }
 
-// ============================
+//// ============================
 // INQUIRY EXTRACTION
 // ============================
 function extractInquiries() {
@@ -146,13 +143,11 @@ function extractInquiries() {
 
     while ((match = inquiryRegex.exec(reportText)) !== null) {
         const date = new Date(match[1]);
-        if (date < fourMonthsAgo) {
-            inquiriesToChallenge.push(match[1]);
-        }
+        if (date < fourMonthsAgo) inquiriesToChallenge.push(match[1]);
     }
 }
 
-// ============================
+//// ============================
 // ACCOUNT EXTRACTION
 // ============================
 function extractAccounts() {
@@ -172,7 +167,7 @@ function extractAccounts() {
     }
 }
 
-// ============================
+//// ============================
 // PERSONAL INFO ISSUES
 // ============================
 function detectPersonalInfoIssues() {
@@ -182,121 +177,114 @@ function detectPersonalInfoIssues() {
     [...reportText.matchAll(/Name[: ]*(.*?)\n/g)].forEach(m => names.add(m[1].trim()));
     [...reportText.matchAll(/Address[: ]*(.*?)\n/g)].forEach(m => addresses.add(m[1].trim()));
 
-    if (names.size > 1) {
-        personalInfoIssues.push({ type: "Multiple Names", data: [...names] });
-    }
+    if (names.size > 1) personalInfoIssues.push({ type: "Multiple Names", data: [...names] });
+    if (addresses.size > 1) personalInfoIssues.push({ type: "Multiple Addresses", data: [...addresses] });
 
-    if (addresses.size > 1) {
-        personalInfoIssues.push({ type: "Multiple Addresses", data: [...addresses] });
-    }
-
-    // Any account without verified status
     accounts.forEach(acc => {
         if (!acc.status || acc.status.toLowerCase().includes("unverified")) {
-            personalInfoIssues.push({
-                type: "Account Without Verification",
-                account: acc.name
-            });
+            personalInfoIssues.push({ type: "Account Without Verification", account: acc.name });
         }
     });
 }
 
-// ============================
+//// ============================
 // DISPLAY RESULTS IN UI
 // ============================
 function displayResults() {
     reportSection.style.display = "block";
-
     issuesList.innerHTML = issues.map(i => `<li>${i}</li>`).join("");
     inquiriesList.innerHTML = inquiriesToChallenge.map(i => `<li>${i}</li>`).join("");
 }
 
-// ============================
+//// ============================
 // GENERATE LETTERS
 // ============================
 function generateLetters() {
     lettersSection.innerHTML = "";
-    let letters = [];
+    generatedLetters = [];
+    const bureaus = Object.keys(creditBureaus);
 
     // --- Inquiries ---
     inquiriesToChallenge.forEach(date => {
-        letters.push(letterBox(`
+        bureaus.forEach(bureau => {
+            const letter = `
+${userName}
+${userAddress}
+
+${creditBureaus[bureau]}
+
+Date: ${new Date().toLocaleDateString()}
+
 📄 Dispute Letter – Unauthorized Inquiry (${date})
 
 To Whom It May Concern,
+
 I dispute the hard inquiry recorded on ${date}.
-Provide a signed authorization form or remove it immediately.
-        `));
+Please provide a signed authorization form or remove it immediately.
+
+Sincerely,
+${userName}`;
+            generatedLetters.push({ bureau, content: letter });
+        });
     });
 
     // --- Personal Info ---
     personalInfoIssues.forEach(issue => {
-        if (issue.type === "Multiple Names") {
-            letters.push(letterBox(`
-📄 Dispute Letter – Multiple Names
+        bureaus.forEach(bureau => {
+            let body = "";
+            if (issue.type === "Multiple Names") body = `📄 Dispute Letter – Multiple Names\nNames found on my report:\n${issue.data.join(", ")}\nPlease remove any names not belonging to me.`;
+            if (issue.type === "Multiple Addresses") body = `📄 Dispute Letter – Multiple Addresses\nAddresses found on my report:\n${issue.data.join(", ")}\nRemove any addresses that cannot be verified as mine.`;
+            if (issue.type === "Account Without Verification") body = `📄 Verification Request – Account: ${issue.account}\nProvide full verification of this account, including signed contract and ID. If unavailable, remove the account immediately.`;
 
-Names found on my report:
-${issue.data.join(", ")}
+            const letter = `
+${userName}
+${userAddress}
 
-Please remove any names not belonging to me.
-            `));
-        }
+${creditBureaus[bureau]}
 
-        if (issue.type === "Multiple Addresses") {
-            letters.push(letterBox(`
-📄 Dispute Letter – Multiple Addresses
+Date: ${new Date().toLocaleDateString()}
 
-Addresses found on my report:
-${issue.data.join(", ")}
+${body}
 
-Remove any addresses that cannot be verified as mine.
-            `));
-        }
-
-        if (issue.type === "Account Without Verification") {
-            letters.push(letterBox(`
-📄 Verification Request – Account: ${issue.account}
-
-Provide full verification of this account, including signed contract and ID.
-If unavailable, remove the account immediately.
-            `));
-        }
+Sincerely,
+${userName}`;
+            generatedLetters.push({ bureau, content: letter });
+        });
     });
 
     // --- Late Payments & Charge-Offs ---
     accounts.forEach(acc => {
-        if (acc.latePayments.length > 0) {
-            letters.push(letterBox(`
-📄 Dispute Letter – Late Payments (${acc.name})
+        bureaus.forEach(bureau => {
+            let body = "";
+            if (acc.latePayments.length > 0) body += `📄 Dispute Letter – Late Payments (${acc.name})\nReported late payments:\n${acc.latePayments.join(", ")}\nProvide verification or remove them.`;
+            if (acc.chargeOff) body += `📄 Dispute Letter – Charge-Off (${acc.name})\nProvide full validation including contract, ID, and accounting. If not available, remove this charge-off.`;
+            if (!body) return;
 
-Reported late payments:
-${acc.latePayments.join(", ")}
+            const letter = `
+${userName}
+${userAddress}
 
-Provide verification or remove them.
-            `));
-        }
+${creditBureaus[bureau]}
 
-        if (acc.chargeOff) {
-            letters.push(letterBox(`
-📄 Dispute Letter – Charge-Off (${acc.name})
+Date: ${new Date().toLocaleDateString()}
 
-Provide full validation including contract, ID, and accounting.
-If not available, remove this charge-off.
-            `));
-        }
+${body}
+
+Sincerely,
+${userName}`;
+            generatedLetters.push({ bureau, content: letter });
+        });
     });
 
-    lettersSection.innerHTML =
-        letters.length ? letters.join("") : `<p>No disputable issues found.</p>`;
+    lettersSection.innerHTML = generatedLetters.map(l => letterBox(l.content)).join("");
 }
 
-// ============================
-// DOWNLOAD ALL LETTERS (TXT)
+//// ============================
+// DOWNLOAD ALL LETTERS AS TXT
 // ============================
 function downloadAllLetters() {
-    const text = lettersSection.innerText.trim();
-    if (!text) return alert("No letters to download.");
-
+    if (!generatedLetters.length) return alert("No letters to download.");
+    const text = generatedLetters.map(l => l.content).join("\n\n---------------------\n\n");
     const blob = new Blob([text], { type: "text/plain" });
     const url = URL.createObjectURL(blob);
 
@@ -308,20 +296,27 @@ function downloadAllLetters() {
     URL.revokeObjectURL(url);
 }
 
+//// ============================
+// DOWNLOAD ALL LETTERS AS PDF
 // ============================
+function downloadAllPDFLetters() {
+    if (!generatedLetters.length) return alert("No letters to generate PDF.");
+
+    const doc = new jsPDF();
+    generatedLetters.forEach((letter, index) => {
+        const lines = doc.splitTextToSize(letter.content, 180);
+        doc.setFont("times", "normal");
+        doc.setFontSize(12);
+        doc.text(lines, 15, 20);
+        if (index < generatedLetters.length - 1) doc.addPage();
+    });
+
+    doc.save("DisputeLetters.pdf");
+}
+
+//// ============================
 // LETTER BOX HTML
 // ============================
 function letterBox(text) {
-    return `
-        <div style="
-            background:#f8f9fa;
-            padding:15px;
-            margin:10px 0;
-            border:2px solid #007bff;
-            border-radius:8px;
-            white-space:pre-wrap;
-            font-family:monospace;">
-            ${text.trim()}
-        </div>
-    `;
+    return `<div style="background:#f8f9fa; padding:15px; margin:10px 0; border:2px solid #007bff; border-radius:8px; white-space:pre-wrap; font-family:monospace;">${text.trim()}</div>`;
 }
