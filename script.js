@@ -1,4 +1,21 @@
+//// ============================
+// USER & BUREAU INFO
 // ============================
+const userName = "Kenneth DuPree Sr.";
+const userAddress = `4429 Benner St.
+Philadelphia, PA 19135`;
+
+const creditBureaus = {
+    Equifax: `Equifax Information Services LLC
+P.O. Box 740241
+Atlanta, GA 30374-0241`,
+    Experian: `Experian
+P.O. Box 4500
+Allen, TX 75013`,
+    TransUnion: `TransUnion LLC
+P.O. Box 2000
+Chester, PA 19016`
+}; ============================
 // PDF.js Worker Setup
 // ============================
 pdfjsLib.GlobalWorkerOptions.workerSrc =
